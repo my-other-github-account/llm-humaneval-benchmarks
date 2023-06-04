@@ -1,6 +1,6 @@
 # OSS Language Model Programming Evaluations Using the HumanEval+ Python Benchmark
 
-This Python program is designed to evaluate language models pulled from the HuggingFace Model Hub, running them against the standardized Python coding benchmark, HumanEval+. The tool interacts with these models via the text-generation-webui API, which serves as the interface for model interaction and generation of Python code completions.
+This repo is designed to evaluate OSS language models pulled from the HuggingFace Model Hub by running them against the standardized Python coding benchmark HumanEval+. The tool interacts with these models via the oogabooga text-generation-webui API, which serves as the interface for model interaction and generation of Python code completions.
 
 ## Functionality
 
@@ -29,5 +29,7 @@ https://github.com/evalplus/evalplus
 https://github.com/openai/human-eval
 
 https://arxiv.org/abs/2107.03374
+
+https://github.com/oobabooga/text-generation-webui
 
 ---
