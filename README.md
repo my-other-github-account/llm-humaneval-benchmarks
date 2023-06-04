@@ -22,4 +22,10 @@ For generating a single code completion from a given prompt, use the `generate_o
 
 The notebooks show how to get this running on AWS SageMaker, run a benchmark, and evaluate benchmark results using the Eval+ evaluation CLI.
 
+## References:
+
+https://github.com/evalplus/evalplus
+https://github.com/openai/human-eval
+https://arxiv.org/abs/2107.03374
+
 ---
