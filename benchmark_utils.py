@@ -2,6 +2,7 @@ import requests
 import itertools
 from evalplus.data import get_human_eval_plus, write_jsonl
 import os
+import json
 
 # Load the problem data
 problems = get_human_eval_plus()
@@ -39,10 +40,17 @@ request = {
     'stopping_strings': []
 }
 
-def run(prompt, seed=-1, port = 5000):
+def run(prompt, seed=-1, port = 5000, deterministic = True):
     # Set the prompt and seed for the current request
     request['prompt'] = prompt
     request['seed'] = seed
+    if deterministic:
+        request['do_sample'] = False
+        request['temperature'] = 1
+        request['top_p'] = 1
+        request['top_k'] = 0
+        request['repetition_penalty'] = 1
+
     # Set the URI for the request
     URI = f'http://{HOST}:{port}/api/v1/generate'
     # Send the request and return the response
@@ -77,23 +85,30 @@ code:
 ```python
 %s""" % (system_prefix, user_tag, prompt_code, assistant_tag, suffix),
         "medium": """%s\nPlease complete the following code:\n%s\n%s\n```python""" % (user_tag, prompt_code, assistant_tag),
-        "short": """```python\n%s""" % prompt_code
+        "short": """```python\n%s""" % prompt_code,
+        "very_short": """%s\n\t""" % prompt_code
     }
     return prompts[prompt_type]
 
 def extract_code(code):
-    return get_function_body(cut_off_prefix(code.split("```python")[-1]))
+    try:
+        return get_function_body(cut_off_prefix(code.split("```python")[1]))
+    except:
+        return get_function_body(cut_off_prefix(code.split("```python")[-1]))
 
-def generate_one_completion(prompt_code, seed = -1, port = 5000, prompt_type = "long", user_tag = "HUMAN:", assistant_tag = "AI MODEL:", system_prefix = "", **kwargs):
+def generate_one_completion(prompt_code, seed = -1, port = 5000, prompt_type = "long", user_tag = "HUMAN:", assistant_tag = "AI MODEL:", system_prefix = "", deterministic = True, **kwargs):
     # Generate a completion for one prompt
     suffix = 'def'+prompt_code.split("def")[1].split("(")[0]+"("
     prompt = generate_prompt(prompt_code, suffix, prompt_type, user_tag, assistant_tag, system_prefix)
-    code_result = run(prompt, seed = seed, port = port)
-    return extract_code(code_result)
+    code_result = run(prompt, seed = seed, port = port, deterministic = deterministic)
+    to_ret = extract_code(code_result)
+    print(to_ret)
+    return to_ret
 
-def run_benchmark(filename, maxnum=-1, port=5000, prompt_type = "long",
-                  user_tag = "### Instruction:", assistant_tag = "### Response:",
-                  system_prefix = "", custom_completion=generate_one_completion, **kwargs):
+
+def run_benchmark(filename, maxnum=-1, start_from=0, port=5000, prompt_type = "long",
+                  user_tag = "", assistant_tag = "",
+                  system_prefix = "", custom_completion=generate_one_completion, deterministic = True, **kwargs):
 
     filepath = f"results/{filename}_{prompt_type}.jsonl"
     print("Results will be written to:", filepath)
@@ -104,7 +119,16 @@ def run_benchmark(filename, maxnum=-1, port=5000, prompt_type = "long",
     if not os.path.exists("results"):
             os.makedirs("results")
 
-    for idx, task_id in enumerate(problem_keys):
+    # If start_from is greater than 0, load existing data
+    if start_from > 0:
+        with open(filepath, 'r') as file:
+            existing_data = [json.loads(line) for line in file]
+            all_samples = existing_data[:start_from*num_samples_per_task]
+            last_task_id = all_samples[-1]['task_id'] if all_samples else None
+            start_it = problem_keys.index(last_task_id) + 1 if last_task_id else 0
+            problem_keys = problem_keys[start_it:]
+
+    for idx, task_id in enumerate(problem_keys, start=start_from):
         print("Processing Task", idx, "of", len(list(problems)))
         for _ in range(num_samples_per_task):
             # Prepare parameters for custom completion
@@ -118,6 +142,7 @@ def run_benchmark(filename, maxnum=-1, port=5000, prompt_type = "long",
                     user_tag=user_tag,
                     assistant_tag=assistant_tag,
                     system_prefix=system_prefix,
+                    deterministic=deterministic,
                     **kwargs
                 )
             }
@@ -130,7 +155,10 @@ def run_benchmark(filename, maxnum=-1, port=5000, prompt_type = "long",
                         for _ in range(num_samples_per_task)]
         temp_samples = all_samples + placeholders
 
-        write_jsonl(filepath, temp_samples)
+        # Write to the file, overwriting previous data
+        with open(filepath, 'w') as file:
+            for item in temp_samples:
+                file.write(json.dumps(item) + '\n')
 
     print("Done writing to", filepath)
 
