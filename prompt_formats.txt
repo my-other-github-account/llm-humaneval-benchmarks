@@ -1,0 +1,64 @@
+——
+
+Alpaca:
+
+——
+
+### Instruction:
+Complete the following Python code: 
+Notes: respond with the entire complete function definition
+do not add any comments, be as concise in your code as possible
+use only built-in libraries, assume no additional imports other than those provided (if any)
+
+code:
+from typing import List
+
+
+def has_close_elements(numbers: List[float], threshold: float) -> bool:
+    """ Check if in given list of numbers, are any two numbers closer to each other than
+    given threshold.
+    >>> has_close_elements([1.0, 2.0, 3.0], 0.5)
+    False
+    >>> has_close_elements([1.0, 2.8, 3.0, 4.0, 5.0, 2.0], 0.3)
+    True
+    """
+
+
+### Response:
+```python
+def has_close_elements(
+
+
+
+——
+
+Vicuna:
+
+——
+
+
+A chat between a curious user and an artificial intelligence assistant. The assistant gives helpful, detailed, and polite answers to the user's questions.
+USER:
+Complete the following Python code: 
+Notes: respond with the entire complete function definition
+do not add any comments, be as concise in your code as possible
+use only built-in libraries, assume no additional imports other than those provided (if any)
+
+code:
+from typing import List
+
+
+def has_close_elements(numbers: List[float], threshold: float) -> bool:
+    """ Check if in given list of numbers, are any two numbers closer to each other than
+    given threshold.
+    >>> has_close_elements([1.0, 2.0, 3.0], 0.5)
+    False
+    >>> has_close_elements([1.0, 2.8, 3.0, 4.0, 5.0, 2.0], 0.3)
+    True
+    """
+
+
+ASSISTANT:
+```python
+def has_close_elements( 
+——
