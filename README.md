@@ -14,13 +14,65 @@ This repo is designed to evaluate OSS language models pulled from the HuggingFac
 
 ## Usage
 
-Call the `run_benchmark_workflow` function to start the entire evaluation process. The parameters for this function include the model name, port number, group size, maximum number of tasks, prompt type, and various formatting strings.
-
-Upon execution, a server is started with the provided parameters, and a benchmark is run on the model's code completion capabilities. The resulting data is then saved to a file in the 'results' directory.
-
-For generating a single code completion from a given prompt, use the `generate_one_completion` function.
+You'll need to install evalplus for this (on top of having text-generation-webui installed)
+pip install evalplus
 
 The notebooks show how to get this running on AWS SageMaker, run a benchmark, and evaluate benchmark results using the Eval+ evaluation CLI.
+
+Basic usage looks like (you'll need to have the model already downloaded from Huggingface, which you can do easily in the usual text-generation-webui GUI) :
+
+```python
+from benchmark_manager import run_benchmark_workflow
+
+# Vicuna prompt style:
+run_benchmark_workflow("TheBloke_vicuna-7B-1.1-GPTQ-4bit-128g", 6666, group_size=128,
+                           prompt_type="long", user_tag="USER:", 
+                           assistant_tag="ASSISTANT:", system_prefix="A chat between a curious user and an artificial intelligence assistant. The assistant gives helpful, detailed, and polite answers to the user's questions.", experiment_tag="vicuna")
+                           
+# Alpaca prompt style:
+run_benchmark_workflow("TheBloke_wizardLM-7B-GPTQ", 6666, group_size=128,
+                           prompt_type="long", user_tag="USER:", 
+                           assistant_tag="ASSISTANT:", system_prefix="", experiment_tag="alpaca")
+```
+
+More advanced usage if you want to customize your prompt more looks like:
+
+```python
+import os, signal
+from benchmark_utils import run_benchmark, run, extract_code
+from benchmark_manager import start_server
+
+model_name = "TheBloke_wizardLM-7B-GPTQ"
+portnum = 6666
+group_size=128
+
+server_process = start_server(model_name, portnum, group_size=group_size, 
+                              working_directory='text-generation-webui') # Make sure server.py is in working_directory
+
+def my_completion(code, **kwargs):
+    prompt = "Complete this code:\n%s\nASSISTANT:" % code
+    results = extract_code(run(prompt, port=kwargs["port"]))
+    print(results)
+    return results
+
+run_benchmark(model_name, port=portnum, custom_completion=my_completion, prompt_type = "custom")
+
+os.kill(server_process.pid, signal.SIGTERM)
+```
+
+To run evalplus against your results (more advanced analysis is in 2_Parse_Results.ipynb)
+
+```python
+import subprocess
+
+filename = "results/TheBloke_wizardLM-7B-GPTQ_custom.jsonl"
+
+result = subprocess.run(["sudo", "/home/ec2-user/anaconda3/envs/pytorch_p39/bin/evalplus.evaluate",
+                "--dataset", "humaneval", "--samples", filename, "--i-just-wanna-run"], 
+                        text=True, capture_output=True, check=False)
+
+print(result.stdout, "\n", result.stderr)
+```
 
 ## References:
 
