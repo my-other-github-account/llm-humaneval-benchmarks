@@ -14,7 +14,7 @@ def print_server_output(process):
         print(line, end='')
 
 
-def start_server(model_name, portnum, group_size=None, working_directory='text-generation-webui'):
+def start_server(model_name, portnum, group_size=None, wbits=None, working_directory='text-generation-webui', public = False):
     """
     This function starts a server in a new process.
     
@@ -28,12 +28,21 @@ def start_server(model_name, portnum, group_size=None, working_directory='text-g
     command = [
         'python', 'server.py', 
         '--api', 
-        '--model', model_name, 
         '--api-blocking-port', str(portnum), 
         '--api-streaming-port', str(portnum+1),  
         '--listen-port', str(portnum+2), 
-        '--wbits', str(4)
+        '--model_type', 'llama',
+        '--trust-remote-code'
     ]
+    
+    if model_name is not None:
+        command += ['--model', model_name]
+    
+    if wbits is not None:
+        command += ['--wbits', str(wbits),]
+        
+    if public:
+        command += ['--share']
 
     # If group_size is provided, append it to the command list
     if group_size is not None:
@@ -55,10 +64,11 @@ def start_server(model_name, portnum, group_size=None, working_directory='text-g
     return server_process
 
 
-def run_benchmark_workflow(model_name, portnum, group_size=None, maxnum=-1, 
+def run_benchmark_workflow(model_name, portnum, group_size=None, wbits = 4,
+                           maxnum=-1, start_from=0, 
                            prompt_type="long", user_tag="### Instruction:", 
                            assistant_tag="### Response:", system_prefix="", experiment_tag="", 
-                           working_directory='text-generation-webui'):
+                           working_directory='text-generation-webui', public=False):
     """
     This function manages the complete benchmark workflow, including starting the server, running the benchmark, and stopping the server.
     
@@ -74,14 +84,16 @@ def run_benchmark_workflow(model_name, portnum, group_size=None, maxnum=-1,
     :param working_directory: The working directory in which the server script resides.
     """
     # Start the server
-    server_process = start_server(model_name, portnum, group_size=group_size, working_directory=working_directory)
+    server_process = start_server(model_name, portnum, wbits = wbits, group_size=group_size, working_directory=working_directory, public=public)
 
     # Create a separate thread to print the server output
     print_thread = threading.Thread(target=print_server_output, args=(server_process,))
     print_thread.start()
 
     # Run the benchmark
-    run_benchmark(model_name+"_"+experiment_tag, maxnum, portnum, prompt_type, user_tag, assistant_tag, system_prefix)
+    run_benchmark(model_name + "_" + experiment_tag, maxnum=maxnum, start_from=start_from,
+              port=portnum, prompt_type=prompt_type, user_tag=user_tag,
+              assistant_tag=assistant_tag, system_prefix=system_prefix)
 
     # Once the benchmark has finished running, terminate the server process
     os.kill(server_process.pid, signal.SIGTERM)
