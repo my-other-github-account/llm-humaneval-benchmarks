@@ -63,8 +63,11 @@ def start_server(model_name, portnum, group_size=None, wbits=None, working_direc
     
     return server_process
 
-
-def run_benchmark_workflow(model_name, portnum, group_size=None, wbits = 4,
+def block_log_server(server_process):
+    for line in iter(server_process.stdout.readline, ''):
+        print(line, end='')
+        
+def run_benchmark_workflow(model_name, portnum, group_size=None, wbits=4,
                            maxnum=-1, start_from=0, 
                            prompt_type="long", user_tag="### Instruction:", 
                            assistant_tag="### Response:", system_prefix="", experiment_tag="", 
@@ -91,9 +94,9 @@ def run_benchmark_workflow(model_name, portnum, group_size=None, wbits = 4,
     print_thread.start()
 
     # Run the benchmark
-    run_benchmark(model_name + "_" + experiment_tag, maxnum=maxnum, start_from=start_from,
+    run_benchmark(model_name, maxnum=maxnum, start_from=start_from,
               port=portnum, prompt_type=prompt_type, user_tag=user_tag,
-              assistant_tag=assistant_tag, system_prefix=system_prefix)
+              assistant_tag=assistant_tag, experiment_tag=experiment_tag, system_prefix=system_prefix)
 
     # Once the benchmark has finished running, terminate the server process
     os.kill(server_process.pid, signal.SIGTERM)

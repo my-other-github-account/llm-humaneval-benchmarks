@@ -60,7 +60,21 @@ def run(prompt, seed=-1, port = 5000, deterministic = True):
 def get_function_body(code):
     # Extract the function body from the provided code
     lines = code.splitlines()
-    function_lines = [line for line in lines if line.strip() != '' and (line.startswith((' ', '\t')) or 'def ' in line)]
+    start_function = False
+    function_lines = []
+    
+    for line in lines:
+        if line.strip().startswith('def '):
+            if start_function:  # if a new function starts, break the loop
+                break
+            start_function = True
+        elif not line.startswith((' ', '\t')) and not line.strip() == '':
+            # If a non-empty line does not start with an indent, break the loop
+            if start_function:
+                break
+        if start_function:
+            function_lines.append(line)
+            
     return '\n'.join(function_lines)
 
 def cut_off_prefix(s):
@@ -108,9 +122,9 @@ def generate_one_completion(prompt_code, seed = -1, port = 5000, prompt_type = "
 
 def run_benchmark(filename, maxnum=-1, start_from=0, port=5000, prompt_type = "long",
                   user_tag = "", assistant_tag = "",
-                  system_prefix = "", custom_completion=generate_one_completion, deterministic = True, **kwargs):
+                  system_prefix = "", experiment_tag = "", custom_completion=generate_one_completion, deterministic = True, **kwargs):
 
-    filepath = f"results/{filename}_{prompt_type}.jsonl"
+    filepath = f"results/{filename}_{prompt_type}_{experiment_tag}.jsonl"
     print("Results will be written to:", filepath)
     problem_keys = list(problems) if maxnum == -1 else list(problems)[:maxnum]
 
