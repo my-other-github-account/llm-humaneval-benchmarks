@@ -60,22 +60,23 @@ def run(prompt, seed=-1, port = 5000, deterministic = True):
 def get_function_body(code):
     # Extract the function body from the provided code
     lines = code.splitlines()
-    start_function = False
+    function_count = 0
     function_lines = []
     
     for line in lines:
         if line.strip().startswith('def '):
-            if start_function:  # if a new function starts, break the loop
+            function_count += 1
+            if function_count > 6:  # if more than 3 functions start, break the loop
                 break
-            start_function = True
         elif not line.startswith((' ', '\t')) and not line.strip() == '':
             # If a non-empty line does not start with an indent, break the loop
-            if start_function:
+            if function_count > 0:
                 break
-        if start_function:
+        if function_count > 0:
             function_lines.append(line)
             
     return '\n'.join(function_lines)
+
 
 def cut_off_prefix(s):
     # Cut off the prefix from the provided string
@@ -98,33 +99,47 @@ code:
 %s
 ```python
 %s""" % (system_prefix, user_tag, prompt_code, assistant_tag, suffix),
+        "long_v2": """%s
+%sComplete the following Python code: 
+Notes: respond with the entire complete function definition
+do not add any comments, be as concise in your code as possible
+use only built-in libraries, assume no additional imports other than those provided (if any)
+
+code:
+```python
+%s
+```
+
+%s```python
+%s""" % (system_prefix, user_tag, prompt_code, assistant_tag, suffix),
         "medium": """%s\nPlease complete the following code:\n%s\n%s\n```python""" % (user_tag, prompt_code, assistant_tag),
         "short": """```python\n%s""" % prompt_code,
         "very_short": """%s\n\t""" % prompt_code
     }
     return prompts[prompt_type]
 
-def extract_code(code):
+def extract_code(code, assistant_tag):
+    # print("***", code, "***")
     try:
-        return get_function_body(cut_off_prefix(code.split("```python")[1]))
+        return get_function_body(cut_off_prefix(code.split(assistant_tag)[1].split("```python")[1]))
     except:
-        return get_function_body(cut_off_prefix(code.split("```python")[-1]))
+        return get_function_body(code.split(assistant_tag)[1])
 
 def generate_one_completion(prompt_code, seed = -1, port = 5000, prompt_type = "long", user_tag = "HUMAN:", assistant_tag = "AI MODEL:", system_prefix = "", deterministic = True, **kwargs):
     # Generate a completion for one prompt
     suffix = 'def'+prompt_code.split("def")[1].split("(")[0]+"("
     prompt = generate_prompt(prompt_code, suffix, prompt_type, user_tag, assistant_tag, system_prefix)
     code_result = run(prompt, seed = seed, port = port, deterministic = deterministic)
-    to_ret = extract_code(code_result)
+    to_ret = extract_code(code_result, assistant_tag=assistant_tag)
     print(to_ret)
     return to_ret
 
 
 def run_benchmark(filename, maxnum=-1, start_from=0, port=5000, prompt_type = "long",
                   user_tag = "", assistant_tag = "",
-                  system_prefix = "", experiment_tag = "", custom_completion=generate_one_completion, deterministic = True, **kwargs):
+                  system_prefix = "", custom_completion=generate_one_completion, deterministic = True, **kwargs):
 
-    filepath = f"results/{filename}_{prompt_type}_{experiment_tag}.jsonl"
+    filepath = f"results/{filename}_{prompt_type}.jsonl"
     print("Results will be written to:", filepath)
     problem_keys = list(problems) if maxnum == -1 else list(problems)[:maxnum]
 
