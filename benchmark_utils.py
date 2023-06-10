@@ -3,6 +3,9 @@ import itertools
 from evalplus.data import get_human_eval_plus, write_jsonl
 import os
 import json
+import sys
+import asyncio
+import websockets
 
 # Load the problem data
 problems = get_human_eval_plus()
@@ -16,7 +19,7 @@ request = {
     'prompt': '',
     'max_new_tokens': 500,
     'do_sample': True,
-    'temperature': 0.1,
+    'temperature': 0.7,
     'top_p': 0.1,
     'typical_p': 1,
     'epsilon_cutoff': 0,  # In units of 1e-4
@@ -40,8 +43,51 @@ request = {
     'stopping_strings': []
 }
 
-def run(prompt, seed=-1, port = 5000, deterministic = True):
+import requests
+from time import sleep
+
+async def run_async(prompt, seed=-1, port = 443, deterministic = True, host='localhost'):
     # Set the prompt and seed for the current request
+    request = {
+        'prompt': prompt,
+        'seed': seed,
+        'max_new_tokens': 250,
+        'truncation_length': 2048,
+        'skip_special_tokens': True
+    }
+
+    if deterministic:
+        request['do_sample'] = False
+        request['temperature'] = 1
+        request['top_p'] = 1
+        request['top_k'] = 0
+        request['repetition_penalty'] = 1
+        request['num_beams'] = 1
+        request['early_stopping'] = False
+
+    URI = f'ws://{host}:{port}/api/v1/stream'
+
+    async with websockets.connect(URI, ping_interval=None) as websocket:
+        await websocket.send(json.dumps(request))
+
+        response_text = prompt
+
+        while True:
+            incoming_data = await websocket.recv()
+            incoming_data = json.loads(incoming_data)
+
+            match incoming_data['event']:
+                case 'text_stream':
+                    response_text += incoming_data['text']
+                case 'stream_end':
+                    return response_text
+
+def run_sync(prompt, seed=-1, port=443, deterministic=True, host='localhost'):
+    return asyncio.run(run_async(prompt, seed, port, deterministic, host))
+
+def run(prompt, seed=-1, port = 443, deterministic = True, host='localhost'):
+    # Set the prompt and seed for the current request
+    request = {}
     request['prompt'] = prompt
     request['seed'] = seed
     if deterministic:
@@ -52,10 +98,25 @@ def run(prompt, seed=-1, port = 5000, deterministic = True):
         request['repetition_penalty'] = 1
 
     # Set the URI for the request
-    URI = f'http://{HOST}:{port}/api/v1/generate'
-    # Send the request and return the response
-    response = requests.post(URI, json=request)
-    return prompt + response.json()['results'][0]['text'] if response.status_code == 200 else ''
+    URI = f'{host}:{port}/api/v1/generate'
+    
+    # Set up retry mechanism
+    retries = 2
+    backoff_factor = 0.1
+
+    for i in range(retries):
+        try:
+            # Send the request and return the response
+            response = requests.post(URI, json=request, timeout=420)
+            response.raise_for_status()
+            return prompt + response.json()['results'][0]['text']
+        except Exception as err:
+            print(f"Attempt {i+1} failed. Error: {err}")
+            sleep(backoff_factor * (2 ** i))  # Exponential backoff
+        except requests.exceptions.RequestException as e:
+            # For any other request exception, raise immediately
+            raise e
+    raise Exception("All attempts failed")
 
 def get_function_body(code):
     # Extract the function body from the provided code
@@ -77,69 +138,94 @@ def get_function_body(code):
             
     return '\n'.join(function_lines)
 
+def get_function_body_old(code):
+    lines = code.splitlines()
+    function_lines = []
+    found_def = False
 
+    for line in lines:
+        # If 'def ' is found in a line, mark that we've entered the function
+        if 'def ' in line:
+            found_def = True
+            function_lines.append(line)
+            continue
+
+        # If we've entered the function, stop including lines when we hit a line that contains text but does not start with a whitespace character
+        if found_def and line.strip() != '' and not line.startswith((' ', '\t')):
+            break
+
+        # Always include the line in the function lines
+        function_lines.append(line)
+
+    return '\n'.join(function_lines)
+
+def cut_off_prefix_old(s):
+    idx_from = s.find('from ')
+    idx_def = s.find('def ')
+    idx_import = s.find('import ')
+
+    # Check if none of the keywords were found
+    if idx_from == -1 and idx_def == -1 and idx_import == -1:
+        return s
+
+    # Prepare a list of found indices, excluding those where the keyword was not found
+    indices = [idx for idx in [idx_from, idx_def, idx_import] if idx != -1]
+
+    # Return the string starting from the earliest found keyword
+    return s[min(indices):]
+
+def extract_code_old(code):
+    code = cut_off_prefix(code.split("```python")[-1])
+    code = get_function_body(code)
+    return code
+
+    
 def cut_off_prefix(s):
     # Cut off the prefix from the provided string
     indices = [idx for keyword in ['from ', 'def ', 'import '] if (idx := s.find(keyword)) != -1]
     return s[min(indices):] if indices else s
 
-def generate_prompt(prompt_code, suffix, prompt_type, user_tag, assistant_tag, system_prefix):
-    # Generate a prompt based on the provided parameters
-    prompts = {
-        "long": """%s
-%s
-Complete the following Python code: 
-Notes: respond with the entire complete function definition
-do not add any comments, be as concise in your code as possible
-use only built-in libraries, assume no additional imports other than those provided (if any)
-
-code:
-%s
-
-%s
-```python
-%s""" % (system_prefix, user_tag, prompt_code, assistant_tag, suffix),
-        "long_v2": """%s
-%sComplete the following Python code: 
-Notes: respond with the entire complete function definition
-do not add any comments, be as concise in your code as possible
-use only built-in libraries, assume no additional imports other than those provided (if any)
-
-code:
-```python
-%s
-```
-
-%s```python
-%s""" % (system_prefix, user_tag, prompt_code, assistant_tag, suffix),
-        "medium": """%s\nPlease complete the following code:\n%s\n%s\n```python""" % (user_tag, prompt_code, assistant_tag),
-        "short": """```python\n%s""" % prompt_code,
-        "very_short": """%s\n\t""" % prompt_code
-    }
-    return prompts[prompt_type]
-
-def extract_code(code, assistant_tag):
+def extract_code(code, assistant_tag, use_old_parser = False):
+    if use_old_parser:
+        return extract_code_old(code)
+    
+    if assistant_tag == "":
+        try:
+            return get_function_body(cut_off_prefix(code.split("```python")[1]))
+        except:
+            return get_function_body(cut_off_prefix(code))
     # print("***", code, "***")
     try:
         return get_function_body(cut_off_prefix(code.split(assistant_tag)[1].split("```python")[1]))
     except:
         return get_function_body(code.split(assistant_tag)[1])
 
-def generate_one_completion(prompt_code, seed = -1, port = 5000, prompt_type = "long", user_tag = "HUMAN:", assistant_tag = "AI MODEL:", system_prefix = "", deterministic = True, **kwargs):
+def generate_one_completion(prompt_code, seed=-1, port=5000, prompt_template="", user_tag="HUMAN:", 
+                            assistant_tag="AI MODEL:", host="localhost", insert_func_stub=False, 
+                            deterministic=True, use_old_parser = False, use_async = False, **kwargs):
     # Generate a completion for one prompt
-    suffix = 'def'+prompt_code.split("def")[1].split("(")[0]+"("
-    prompt = generate_prompt(prompt_code, suffix, prompt_type, user_tag, assistant_tag, system_prefix)
-    code_result = run(prompt, seed = seed, port = port, deterministic = deterministic)
-    to_ret = extract_code(code_result, assistant_tag=assistant_tag)
+    suffix = ""
+    if insert_func_stub:
+        suffix = 'def'+prompt_code.split("def")[1].split("(")[0]+"("
+    prompt = prompt_template.format(PROMPT=prompt_code) + suffix
+    # print(prompt)
+    if use_async:
+        code_result = run_sync(prompt, seed=seed, port=port, deterministic=deterministic, host=host)
+    else:
+        code_result = run(prompt, seed=seed, port=port, deterministic=deterministic, host=host)
+
+    if code_result == prompt:
+        raise Exception("Model doesn't appear to be loaded. Quitting.")
+
+    to_ret = extract_code(code_result, assistant_tag=assistant_tag, use_old_parser = use_old_parser)
     print(to_ret)
     return to_ret
 
+def run_benchmark(filename, prompt_template, maxnum=-1, start_from=0, port=5000, user_tag="", 
+                  assistant_tag="", host="localhost", insert_func_stub=False, 
+                  custom_completion=generate_one_completion, use_async = False, deterministic=True, use_old_parser = False, **kwargs):
 
-def run_benchmark(filename, maxnum=-1, start_from=0, port=5000, prompt_type = "long",
-                  user_tag = "", assistant_tag = "",
-                  system_prefix = "", custom_completion=generate_one_completion, deterministic = True, **kwargs):
-
-    filepath = f"results/{filename}_{prompt_type}.jsonl"
+    filepath = f"results/{filename}.jsonl"
     print("Results will be written to:", filepath)
     problem_keys = list(problems) if maxnum == -1 else list(problems)[:maxnum]
 
@@ -167,11 +253,14 @@ def run_benchmark(filename, maxnum=-1, start_from=0, port=5000, prompt_type = "l
                     problems[task_id]["prompt"],
                     seed=next(iterc),
                     port=port,
-                    prompt_type=prompt_type,
+                    prompt_template=prompt_template,
                     user_tag=user_tag,
                     assistant_tag=assistant_tag,
-                    system_prefix=system_prefix,
+                    insert_func_stub=insert_func_stub,
                     deterministic=deterministic,
+                    host=host,
+                    use_old_parser = use_old_parser, 
+                    use_async = use_async,
                     **kwargs
                 )
             }
@@ -188,6 +277,8 @@ def run_benchmark(filename, maxnum=-1, start_from=0, port=5000, prompt_type = "l
         with open(filepath, 'w') as file:
             for item in temp_samples:
                 file.write(json.dumps(item) + '\n')
+        sys.stdout.flush()
+        sys.stderr.flush()
 
     print("Done writing to", filepath)
 
