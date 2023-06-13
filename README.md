@@ -4,7 +4,8 @@ This repo is designed to evaluate OSS language models pulled from the HuggingFac
 
 ## Results:
 
-![HumanEvalResultsV1](https://github.com/my-other-github-account/llm-humaneval-benchmarks/assets/82987814/afca3cd5-6e3c-4c94-ada5-a965967ebfcb)
+![HumanEval_v3-4](https://github.com/my-other-github-account/llm-humaneval-benchmarks/assets/82987814/a8f6e32c-5688-4eea-a7ca-3c8c48683cda)
+
 
 ## Functionality
 
